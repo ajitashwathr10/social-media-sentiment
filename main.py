@@ -88,5 +88,90 @@ class SentimentAnalyzer:
             if not token.is_stop and token.is_alpha and len(token.lemma_) > 1
         ]
         return ' '.join(tokens)
+
+    def _train_model(
+        self,
+        X_train,
+        y_train,
+        epochs = 25,
+        batch_size = 128,
+        validation_split = 0.2
+    ):
+        """
+        Training with techniques to avoid overfitting
+
+        Args:
+            X_train (np.array): Training sequences
+            y_train (np.array): Training labels
+            epochs (int): Maximum training iterations
+            batch_size (int): Training batch size
+            validation_split (float): Validation data ratio
+        """
+
+        y_train_categorical = tf.keras.utils.to_categorical(
+            self.label_encoder.fit_transform(y_train)
+        )
+        early_stop = tf.keras.callbacks.EarlyStopping(
+            monitor = 'val_loss',
+            patience = 8,
+            restore_best_weight = True
+        )
+        lr_reduce = tf.keras.callbacks.ReduceLROnPlateau(
+            monitor = 'val_loss',
+            factor = 0.3,
+            patience = 4,
+            min_lr = 1e-6,
+            verbose = 1
+        )
+        history = self.model.fit(
+            X_train,
+            y_train_categorical,
+            epochs = epochs,
+            batch_size = batch_size,
+            validation_split = validation_split,
+            callbacks = [early_stop, lr_reduce]
+        )
+        self.log_training_performance(history)
+    
+    def _log_training_performance(self, history):
+        """
+        Comprehensive training performance logging
+        
+        Args:
+            history (tf.keras.callbacks.History): Training history
+        """
+
+        log_file = 'model_training_log.json'
+        performance_data = {
+            'timestamp': datetime.now().isoformat(),
+            'loss': history.history['loss'][-1],
+            'accuracy': history.history['accuracy'][-1],
+            'val_loss': history.history['val_loss'][-1],
+            'val_accuracy': history.history['val_accuracy'][-1],
+            'precision': history.history['precision'][-1],
+            'recall': history.history['recall'][-1]
+        }
+
+        with open(log_file, 'a') as f:
+            json.dump(performance_data, f)
+            f.write('\n')
+    
+    def _train_word2vec(self, texts):
+        """
+        Train word embeddings for semantic understanding
+
+        Args:
+            texts (list): Collection of processed texts
+        """
+        tokenized_texts = [text.split() for text in texts]
+        self.word2vec_model = Word2Vec(
+            sentences = tokenized_texts,
+            vector_size = 300,
+            window = 5,
+            min_count = 1
+        )
+
+    def _predict_sentiment(self, tweets, use_ensemble = True):
+        
     
     
