@@ -172,6 +172,17 @@ class SentimentAnalyzer:
         )
 
     def _predict_sentiment(self, tweets, use_ensemble = True):
+        """
+        Multi-modal sentiment prediction
         
-    
+        Args:
+            tweets (list): Input tweet texts
+            use_ensemble (bool): Enable ensemble prediction
+        
+        Returns:
+            list: Comprehensive sentiment analysis results
+        """
+
+        processed_tweets = [self._text_cleaning(tweet) for tweet in tweets]
+        
     
