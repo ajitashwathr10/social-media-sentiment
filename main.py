@@ -184,5 +184,24 @@ class SentimentAnalyzer:
         """
 
         processed_tweets = [self._text_cleaning(tweet) for tweet in tweets]
-        
+        self.tokenizer.fit_on_texts(processed_tweets)
+        sequences = self.tokenizer.texts_to_sequences(processed_tweets)
+        padded_sequences = pad_sequences(sequences, maxlen = self.max_len)
+        nn_predictions = self.model.predict(padded_sequences)
+        result = []
+        for tweet, nn_pred, processed_text in zip(tweets, nn_predictions, processed_tweets):
+            vadar_scores = self.sentiment_intensity.polarity_scores(tweet)
+            semantic_features = {}
+            if self.word2vec_model:
+                semantic_features = self._extract_semantic_features(processed_text)
+            sentiment_labels = [
+                'Very Negative', 'Negative', 'Neutral', 'Positive', 'Very Positive'
+            ]
+            if use_ensemble:
+                nn_sentiment = sentiment_labels[np.argmax(nn_pred)]
+                result = {
+                    'text': tweet,
+                    'neural'
+                }
+            
     
