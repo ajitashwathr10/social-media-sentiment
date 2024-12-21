@@ -188,7 +188,7 @@ class SentimentAnalyzer:
         sequences = self.tokenizer.texts_to_sequences(processed_tweets)
         padded_sequences = pad_sequences(sequences, maxlen = self.max_len)
         nn_predictions = self.model.predict(padded_sequences)
-        result = []
+        results = []
         for tweet, nn_pred, processed_text in zip(tweets, nn_predictions, processed_tweets):
             vadar_scores = self.sentiment_intensity.polarity_scores(tweet)
             semantic_features = {}
@@ -201,7 +201,141 @@ class SentimentAnalyzer:
                 nn_sentiment = sentiment_labels[np.argmax(nn_pred)]
                 result = {
                     'text': tweet,
-                    'neural'
+                    'neural_network_sentiment': nn_sentiment,
+                    'neural_network_probabilities': dict(zip(sentiment_labels, nn_pred)),
+                    'vadar_sentiment': vadar_scores,
+                    'semantic_features': semantic_features
                 }
+            else:
+                result = {
+                    'text': tweet,
+                    'neural_network_sentiment': sentiment_labels[np.argmax(nn_pred)],
+                    'neural_network_probabilities': dict(zip(sentiment_labels, nn_pred))
+                }
+            results.append(result)
+        return results
+
+    def _extract_semantic_features(self, text):
+        """
+        Extract semantic features using Word2Vec
+        
+        Args:
+            text (str): Processed text
             
+        Returns:
+            dict: Semantic analysis results
+        """
+
+        if not self.word2vec_model:
+            return {}
+        tokens = text.split()
+        semantic_vectors = [
+            self.word2vec_model.wv[token]
+            for token in tokens
+            if token in self.word2vec_model.wv
+        ]
+        if not semantic_vectors:
+            return {}
+        return {
+            'avg_semantic_vector': np.mean(semantic_vectors, axis = 0).tolist(),
+            'semantic_vector_variance': np.var(semantic_vectors, axis = 0).tolist()
+        }
+
+class TwitterDataCollector:
+    def __init__(self, consumer_key, consumer_secret, access_token ,acces_token_secret):
+        try:
+            auth = tweepy.OAuthHandler(consumer_key, consumer_secret)
+            auth.set.access_token(access_token, acces_token_secret)
+            self.api = tweepy.API(auth, wait_on_rate_limit = True)
+            self.client = tweepy.Client(
+                bearer_token = consumer_secret,
+                wait_on_rate_limit = True
+            )
+            self.logger = self._setup_logger()
+        except Exception as e:
+            logging.error(f"Twitter Authentication Error: {e}")
+            raise
     
+    def _setup_logger(self):
+        logger = logging.getLogger('twitter_collector')
+        logger.setLevel(logging.INFO)
+        handler = logging.FileHandler('twitter_collection.log')
+        formatter = logging.Formatter(
+            '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+        )
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
+        return logger
+
+    def _collect_tweets(self, query, count = 1000, lang = 'en', include_metrics = True):
+        tweets_data = []
+        try:
+            for tweet in tweepy.Cursor(
+                self.api.search_tweets,
+                q = query,
+                lang = lang
+                tweet_mode = 'extended',
+                include_entities = True
+            ).items(count):
+                tweet_data = {
+                    'text': tweet.full_text,
+                    'created_at': tweet.created_at,
+                    'user': tweet.user.screen_name,
+                    'user_followers': tweet.user.followers_count,
+                    'user_location': tweet.user.location,
+                    'user_verified': tweet.user.verified,
+                    'retweet_count': tweet.retweet_count,
+                    'favorite_count': tweet.favorite_count,
+                    'hashtags': [tag['text'] for tag in tweet.entities.get('hashtags', [])],
+                    'mentions': [mention['screen_name'] for mention in tweet.entities.get('user_mentions', [])],
+                    'source': tweet.source,
+                    'is_retweet': hasattr(tweet, 'retweeted_status')
+                }    
+                if include_metrics:
+                    tweets_data.update(self._get_engagement_metrics(tweet))
+                tweets_data.append(tweet_data)
+                self.logger.info(f"Collected tweet from {tweet.user.screen_name}")
+
+        except Exception as e:
+            self.logger.error(f"Error collecting tweets: {e}")
+        return pd.DateFrame(tweets_data)
+
+    def _get_engagement_metrics(self, tweet):
+        metrics = {}
+        try:
+            potential_reach = tweet.user.followers_count
+            if potential_reach > 0:
+                engagement_rate = ((tweet.favorite_count + tweet.retweet_count) / potential_reach) * 100
+                metrics['engagement_rate'] = round(engagement_rate, 2)
+            time_diff = datetime.now(tweet.created_at.tzinfo) - tweet.created_at
+            hours_passed = time_diff.total_seconds() / 3600
+            if hours_passed > 0:
+                virality_score = (tweet.retweet_count / hours_passed) * 100
+                metrics['virality_score'] = round(virality_score, 2)
+        except Exception as e:
+            self.logger.error(f"Error calculating metrics: {e}")
+        return metrics
+
+class TweetAPI:
+    def __init__(self):
+        self.app = Flask(__name__)
+        self.sentiment_analyzer = SentimentAnalyzer()
+        self.tweet_collector = None
+        self.setup_routes()
+        self.setup_error_handling()
+
+        self.request_count = {}
+        self.rate_limit = 100
+        self.cache = {}
+        self.cache_timeout = 300
+
+    def setup_routes(self):
+        @self.app.route('/api/v1/analyze', methods = ['POST'])
+        def analyze_sentiment():
+            if not self._check_rate_limit(request.remote_addr):
+                return jsonify({"error": "Rate limit exceeded"}), 429
+            
+            
+
+
