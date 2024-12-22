@@ -336,6 +336,83 @@ class TweetAPI:
             if not self._check_rate_limit(request.remote_addr):
                 return jsonify({"error": "Rate limit exceeded"}), 429
             
-            
+            try:
+                data = request.json
+                tweets = data.get('tweets', [])
+                if not tweets:
+                    return jsonify({'error': "No tweets provided"}), 400
+                cache_key = str(sorted(tweets))
+                if cache_key in self.cache:
+                    cached_result = self._get_cached_result(cache_key)
+                    if cached_result:
+                        return jsonify(cached_result)
+                results = self.sentiment_analyzer._predict_sentiment(tweets)
+                self._cache_result(cache_key, results)
+                return jsonify({
+                    "status": "success",
+                    "timestamp": datetime.now().isoformat(),
+                    "results": results
+                })
+            except Exception as e:
+                logging.error(f"Analysis Error: {e}")
+                return jsonify({"error": str(e)}), 500
 
+        @self.app.route('api/v1/collect', method = ['POST'])
+        def collect_tweets():
+            """
+            Tweet collection endpoint
+            """
+            try:
+                data = request.json
+                query = data.get('query')
+                count = data.get('count', 100)
+                lang = data.get('lang', 'en')
+                if not query:
+                    return jsonify({"error": "No search query provided"}), 400
+                if not self.tweet_collector:
+                    return jsonify({"error": "Twitter credentials not configured"}), 500
+                tweets_df = self.tweet_collector.collect_tweets(
+                    query = query,
+                    count = count,
+                    lang = lang
+                )
+                return jsonify({
+                    "status": "success",
+                    "count": len(tweets_df)
+                    "tweets": tweets_df.to_dict('records')
+                })
+            except Exception as e:
+                logging.error(f"Collection Error: {e}")
+                return jsonify({"error": str(e)}), 500
+
+        @self.app.route('api/v1/stats', methods = ['GET'])
+        def get_stats():
+            """
+            API statistics endpoint
+            """
+            return jsonify({
+                "status": "healthy",
+                "uptime": self._get_uptime(),
+                "request_count": sum(self.request_count.values()),
+                "cache_size": len(self.cache)
+            })
+    
+    def setup_error_handling(self):
+        """
+        Configure comprehensive error handling
+        """
+        @self.app.errorhandler(404)
+        def not_found(error):
+            return jsonify({"error": "Resource not found"}), 404
+
+        @self.app.errorhandler(405)
+        def method_not_allowed(error):
+            return jsonify({"error": "Method not allowed"}), 405
+        
+        @self.app.errorhandler(500)
+        def internal_error(error):
+            return jsonify({"error": "Internal server error"}), 500
+    
+    def _check_rate_limit(self, ip_address):
+        
 
