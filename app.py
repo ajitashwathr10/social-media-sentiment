@@ -7,3 +7,9 @@ from datetime import datetime
 import pandas as pd
 from collections import Counter
 
+app = Flask(__name__)
+
+TWITTER_API_KEY = ""
+TWITTER_API_SECRET = ""
+TWITTER_ACCESS_TOKEN = ""
+TWITTER_ACCESS_TOKEN_SECRET = ""
